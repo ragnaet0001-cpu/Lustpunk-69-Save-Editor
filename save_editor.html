@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Save Terminal — Lustpunk 69 Save Editor</title>
+<style>
+  :root{
+    --bg: #16110c;
+    --bg-panel: #1d1610;
+    --bg-inset: #100c08;
+    --amber: #ffb100;
+    --amber-dim: #8a5d16;
+    --amber-faint: #4a3313;
+    --text: #e8dcc0;
+    --text-dim: #9c8f74;
+    --err: #ff6b57;
+    --ok: #c9d97a;
+    --border: #3a2b15;
+    --mono: 'JetBrains Mono', 'IBM Plex Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  *{ box-sizing: border-box; }
+  html,body{
+    margin:0; padding:0; min-height:100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 14px;
+  }
+  body{
+    background-image:
+      repeating-linear-gradient(0deg, rgba(255,177,0,0.025) 0px, rgba(255,177,0,0.025) 1px, transparent 1px, transparent 3px);
+    padding: 32px 16px 64px;
+  }
+  .wrap{ max-width: 760px; margin: 0 auto; }
+
+  .term-head{
+    display:flex; align-items:baseline; justify-content:space-between;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 14px; margin-bottom: 22px;
+  }
+  .term-head h1{
+    font-size: 15px; font-weight: 600; letter-spacing: 0.02em;
+    color: var(--amber); margin:0;
+  }
+  .term-head .path{
+    color: var(--text-dim); font-size: 12px;
+  }
+  .lede{
+    color: var(--text-dim); font-size: 12.5px; line-height:1.6;
+    margin: -10px 0 26px;
+    max-width: 62ch;
+  }
+  .lede code{ color: var(--amber-dim); }
+
+  .panel{
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 18px 20px;
+    margin-bottom: 18px;
+  }
+  .panel-title{
+    font-size: 11.5px; color: var(--text-dim);
+    margin: 0 0 14px;
+    display:flex; align-items:center; gap:8px;
+  }
+  .panel-title::before{
+    content:'›'; color: var(--amber-dim); font-size: 15px; line-height:1;
+  }
+  .panel[data-state="done"] .panel-title::before{ color: var(--ok); content:'✓'; }
+  .panel[data-disabled="true"]{ opacity: 0.4; pointer-events:none; }
+
+  .drop{
+    border: 1px dashed var(--amber-faint);
+    border-radius: 2px;
+    padding: 22px;
+    text-align:center;
+    color: var(--text-dim);
+    font-size: 12.5px;
+    cursor:pointer;
+    transition: border-color .15s ease, background .15s ease;
+  }
+  .drop:hover, .drop.drag{
+    border-color: var(--amber);
+    background: rgba(255,177,0,0.04);
+  }
+  .drop strong{ color: var(--text); font-weight:600; }
+  .drop input{ display:none; }
+  .filename{ margin-top: 10px; font-size: 12px; color: var(--amber-dim); word-break: break-all; }
+
+  textarea{
+    width:100%; resize: vertical;
+    background: var(--bg-inset);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.5;
+    padding: 12px;
+  }
+  #pasteArea{ height: 64px; margin-top: 12px; }
+  #rawJson{ height: 320px; }
+
+  .row{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .row + .row{ margin-top: 10px; }
+
+  button{
+    font-family: var(--mono);
+    background: transparent;
+    color: var(--amber);
+    border: 1px solid var(--amber-dim);
+    padding: 9px 16px;
+    font-size: 12.5px;
+    border-radius: 2px;
+    cursor: pointer;
+    letter-spacing: 0.01em;
+    transition: background .12s ease, color .12s ease, border-color .12s ease;
+  }
+  button:hover:not(:disabled){
+    background: var(--amber);
+    color: #16110c;
+    border-color: var(--amber);
+  }
+  button:disabled{
+    color: var(--text-dim);
+    border-color: var(--border);
+    cursor: not-allowed;
+  }
+  button.primary{
+    background: var(--amber); color: #16110c; font-weight:600;
+  }
+  button.primary:hover:not(:disabled){ background: #ffc84a; }
+
+  .field-row{
+    display:flex; align-items:center; gap:10px;
+    padding: 8px 0; border-bottom: 1px solid var(--border);
+  }
+  .field-row:last-child{ border-bottom: none; }
+  .field-row .key{ color: var(--text-dim); flex: 1; }
+  .field-row .key::before{ content:'"'; color: var(--border); }
+  .field-row .key::after{ content:'"'; color: var(--border); }
+  .field-row input[type=text]{
+    width: 140px;
+    background: var(--bg-inset);
+    border: 1px solid var(--border);
+    color: var(--amber);
+    font-family: var(--mono);
+    padding: 6px 8px;
+    border-radius: 2px;
+    text-align:right;
+  }
+  .field-row input[type=text]:focus{ outline:none; border-color: var(--amber-dim); }
+  .no-fields{ color: var(--text-dim); font-size: 12px; font-style: italic; }
+
+  .log{
+    background: var(--bg-inset);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 12px 14px;
+    height: 150px;
+    overflow-y: auto;
+    font-size: 11.5px;
+    line-height: 1.7;
+    color: var(--text-dim);
+  }
+  .log .ln{ white-space: pre-wrap; word-break: break-all; }
+  .log .ln.ok{ color: var(--ok); }
+  .log .ln.err{ color: var(--err); }
+  .log .ln .t{ color: var(--amber-faint); margin-right: 8px; }
+  .log .cursor{ display:inline-block; width:6px; height:11px; background:var(--amber); vertical-align:-1px; animation: blink 1s steps(1) infinite; }
+  @keyframes blink{ 50%{ opacity:0; } }
+
+  .hint{ font-size: 11px; color: var(--text-dim); margin-top: 8px; }
+  .divider{ border:none; border-top:1px solid var(--border); margin: 16px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="term-head">
+    <h1>SAVE TERMINAL</h1>
+    <div class="path">lustpunk69 / save.dat</div>
+  </div>
+  <p class="lede">
+    Loads your encrypted <code>save.dat</code> entirely in this browser tab — nothing is uploaded anywhere.
+    Decrypts with the AES-256-CBC scheme pulled from <code>Assembly-CSharp.dll</code>, lets you edit values,
+    and re-encrypts with a fresh IV for a save the game will accept.
+  </p>
+
+  <!-- STEP 1: LOAD -->
+  <div class="panel" id="panelLoad">
+    <p class="panel-title">load encrypted save</p>
+    <label class="drop" id="dropZone">
+      <input type="file" id="fileInput" accept=".dat,.txt">
+      <div><strong>Click to choose save.dat</strong> or drag it here</div>
+      <div class="filename" id="fileName"></div>
+    </label>
+    <textarea id="pasteArea" placeholder="…or paste the base64 save text directly here"></textarea>
+    <div class="row" style="margin-top:12px;">
+      <button class="primary" id="btnDecrypt" disabled>Decrypt</button>
+      <span class="hint" id="loadHint">Waiting for a file or pasted text.</span>
+    </div>
+  </div>
+
+  <!-- STEP 2: QUICK EDIT -->
+  <div class="panel" id="panelQuick" data-disabled="true">
+    <p class="panel-title">currency fields found</p>
+    <div id="fieldList" class="no-fields">Decrypt a save to scan for currency-like fields.</div>
+    <div class="row" style="margin-top:14px;">
+      <button id="btnApplyFields" disabled>Apply changes above</button>
+    </div>
+  </div>
+
+  <!-- STEP 3: RAW EDIT -->
+  <div class="panel" id="panelRaw" data-disabled="true">
+    <p class="panel-title">full save data (edit anything)</p>
+    <textarea id="rawJson" spellcheck="false" placeholder="Decrypted JSON will appear here…"></textarea>
+    <div class="hint">This is the exact text that gets re-encrypted — quick edits above and manual edits here both land in this box.</div>
+  </div>
+
+  <!-- STEP 4: ENCRYPT -->
+  <div class="panel" id="panelEncrypt" data-disabled="true">
+    <p class="panel-title">re-encrypt &amp; download</p>
+    <div class="row">
+      <button class="primary" id="btnEncrypt" disabled>Re-encrypt save</button>
+      <button id="btnDownload" disabled>Download save.dat</button>
+    </div>
+  </div>
+
+  <!-- LOG -->
+  <div class="panel">
+    <p class="panel-title">log</p>
+    <div class="log" id="log"><span class="ln"><span class="t">ready</span>waiting for input<span class="cursor"></span></span></div>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  const KEY_SECRET = "key"; // discovered constant used to derive the AES key via SHA-256
+
+  const logEl = document.getElementById('log');
+  function log(msg, cls){
+    const time = new Date().toLocaleTimeString([], {hour12:false});
+    const line = document.createElement('div');
+    line.className = 'ln' + (cls ? (' '+cls) : '');
+    line.innerHTML = '<span class="t">'+time+'</span>' + msg.replace(/</g,'&lt;');
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  // ---------- base64 <-> bytes ----------
+  function bytesToBase64(bytes){
+    let binary = '';
+    const chunk = 0x8000;
+    for (let i=0; i<bytes.length; i+=chunk){
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i+chunk));
+    }
+    return btoa(binary);
+  }
+  function base64ToBytes(b64){
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i=0; i<binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  }
+
+  // ---------- crypto ----------
+  let cachedKey = null;
+  async function getKey(){
+    if (cachedKey) return cachedKey;
+    const enc = new TextEncoder();
+    const hash = await crypto.subtle.digest('SHA-256', enc.encode(KEY_SECRET));
+    cachedKey = await crypto.subtle.importKey('raw', hash, {name:'AES-CBC'}, false, ['encrypt','decrypt']);
+    return cachedKey;
+  }
+
+  async function decryptSave(b64text){
+    const raw = base64ToBytes(b64text.trim());
+    if (raw.length <= 16) throw new Error('Decoded data is too short to contain an IV + ciphertext.');
+    const iv = raw.slice(0,16);
+    const ct = raw.slice(16);
+    const key = await getKey();
+    const ptBuf = await crypto.subtle.decrypt({name:'AES-CBC', iv}, key, ct);
+    return new TextDecoder('utf-8').decode(ptBuf);
+  }
+
+  async function encryptSave(plaintext){
+    const key = await getKey();
+    const iv = crypto.getRandomValues(new Uint8Array(16));
+    const ptBytes = new TextEncoder().encode(plaintext);
+    const ctBuf = await crypto.subtle.encrypt({name:'AES-CBC', iv}, key, ptBytes);
+    const out = new Uint8Array(16 + ctBuf.byteLength);
+    out.set(iv, 0);
+    out.set(new Uint8Array(ctBuf), 16);
+    return bytesToBase64(out);
+  }
+
+  // ---------- currency field scan ----------
+  const CURRENCY_WORDS = ['credit','money','gold','cash','coin','gem','currency','balance','essence','shard','token'];
+  function scanFields(text){
+    const regex = /"([A-Za-z0-9_]+)":\s*(-?\d+)(?!\.)/g;
+    const found = [];
+    let m;
+    while ((m = regex.exec(text))){
+      const key = m[1];
+      if (CURRENCY_WORDS.some(w => key.toLowerCase().includes(w))){
+        found.push({ key, value: m[2] });
+      }
+    }
+    return found;
+  }
+
+  // ---------- DOM wiring ----------
+  const fileInput   = document.getElementById('fileInput');
+  const dropZone    = document.getElementById('dropZone');
+  const fileNameEl  = document.getElementById('fileName');
+  const pasteArea   = document.getElementById('pasteArea');
+  const btnDecrypt  = document.getElementById('btnDecrypt');
+  const loadHint    = document.getElementById('loadHint');
+
+  const panelQuick  = document.getElementById('panelQuick');
+  const fieldList   = document.getElementById('fieldList');
+  const btnApplyFields = document.getElementById('btnApplyFields');
+
+  const panelRaw    = document.getElementById('panelRaw');
+  const rawJson     = document.getElementById('rawJson');
+
+  const panelEncrypt = document.getElementById('panelEncrypt');
+  const btnEncrypt   = document.getElementById('btnEncrypt');
+  const btnDownload  = document.getElementById('btnDownload');
+
+  const panelLoad   = document.getElementById('panelLoad');
+
+  let encryptedB64 = null;
+  let lastDownloadUrl = null;
+
+  function refreshDecryptEnabled(){
+    const hasSource = (encryptedB64 && encryptedB64.trim().length > 0) || pasteArea.value.trim().length > 0;
+    btnDecrypt.disabled = !hasSource;
+    loadHint.textContent = hasSource ? 'Ready to decrypt.' : 'Waiting for a file or pasted text.';
+  }
+
+  fileInput.addEventListener('change', () => {
+    const f = fileInput.files[0];
+    if (!f) return;
+    fileNameEl.textContent = f.name + '  (' + f.size.toLocaleString() + ' bytes)';
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      encryptedB64 = e.target.result;
+      pasteArea.value = '';
+      log('Loaded ' + f.name + ' (' + f.size.toLocaleString() + ' bytes)');
+      refreshDecryptEnabled();
+    };
+    reader.onerror = () => log('Failed to read file.', 'err');
+    reader.readAsText(f);
+  });
+
+  ['dragover','dragenter'].forEach(ev => dropZone.addEventListener(ev, e => {
+    e.preventDefault(); dropZone.classList.add('drag');
+  }));
+  ['dragleave','drop'].forEach(ev => dropZone.addEventListener(ev, e => {
+    dropZone.classList.remove('drag');
+  }));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    const f = e.dataTransfer.files[0];
+    if (!f) return;
+    fileInput.files = e.dataTransfer.files;
+    fileInput.dispatchEvent(new Event('change'));
+  });
+
+  pasteArea.addEventListener('input', () => {
+    if (pasteArea.value.trim()) encryptedB64 = null;
+    refreshDecryptEnabled();
+  });
+
+  btnDecrypt.addEventListener('click', async () => {
+    const source = (pasteArea.value.trim() || encryptedB64 || '').trim();
+    if (!source) return;
+    btnDecrypt.disabled = true;
+    try {
+      log('Deriving AES-256 key (SHA-256 of the hardcoded secret)…');
+      log('Decrypting…');
+      const text = await decryptSave(source);
+      rawJson.value = text;
+      log('Decrypted ' + text.length.toLocaleString() + ' characters of save data.', 'ok');
+      panelLoad.setAttribute('data-state','done');
+
+      const fields = scanFields(text);
+      renderFields(fields);
+      if (fields.length){
+        log('Found ' + fields.length + ' currency-like field' + (fields.length>1?'s':'') + ': ' + fields.map(f=>f.key+'='+f.value).join(', '));
+      } else {
+        log('No obvious currency fields matched — use the raw editor below to change any value.');
+      }
+
+      panelQuick.removeAttribute('data-disabled');
+      panelRaw.removeAttribute('data-disabled');
+      panelEncrypt.removeAttribute('data-disabled');
+      btnEncrypt.disabled = false;
+    } catch (err) {
+      log('Decryption failed: ' + err.message, 'err');
+      log('Check that this is an unmodified save.dat from the same game/version.', 'err');
+    } finally {
+      btnDecrypt.disabled = false;
+    }
+  });
+
+  function renderFields(fields){
+    fieldList.innerHTML = '';
+    if (!fields.length){
+      fieldList.className = 'no-fields';
+      fieldList.textContent = 'No currency-like fields detected automatically.';
+      btnApplyFields.disabled = true;
+      return;
+    }
+    fieldList.className = '';
+    fields.forEach(f => {
+      const row = document.createElement('div');
+      row.className = 'field-row';
+      row.innerHTML = '<span class="key">'+f.key+'</span>' +
+        '<input type="text" inputmode="numeric" data-key="'+f.key+'" value="'+f.value+'">';
+      fieldList.appendChild(row);
+    });
+    btnApplyFields.disabled = false;
+  }
+
+  btnApplyFields.addEventListener('click', () => {
+    let text = rawJson.value;
+    let changed = 0;
+    fieldList.querySelectorAll('input[data-key]').forEach(input => {
+      const key = input.getAttribute('data-key');
+      const newVal = input.value.trim();
+      if (!/^-?\d+$/.test(newVal)){
+        log('Skipped "'+key+'": "'+newVal+'" is not a whole number.', 'err');
+        return;
+      }
+      const re = new RegExp('("'+key+'":\\s*)-?\\d+');
+      if (re.test(text)){
+        text = text.replace(re, '$1'+newVal);
+        changed++;
+      } else {
+        log('Could not find "'+key+'" anymore — was it edited manually?', 'err');
+      }
+    });
+    rawJson.value = text;
+    if (changed) log('Applied ' + changed + ' field edit' + (changed>1?'s':'') + ' to the save text.', 'ok');
+  });
+
+  btnEncrypt.addEventListener('click', async () => {
+    const text = rawJson.value;
+    try {
+      JSON.parse(text);
+    } catch (err) {
+      log('Warning: the edited text is not valid JSON (' + err.message + '). Encrypting anyway, but the game may reject it.', 'err');
+    }
+    btnEncrypt.disabled = true;
+    try {
+      log('Encrypting with a fresh random IV…');
+      const b64 = await encryptSave(text);
+      log('Re-encrypted (' + b64.length.toLocaleString() + ' base64 chars).', 'ok');
+
+      // sanity round-trip
+      const verify = await decryptSave(b64);
+      if (verify === text){
+        log('Round-trip check passed — the new save decrypts back to your edited text.', 'ok');
+      } else {
+        log('Round-trip check produced different text — please re-check before using this file.', 'err');
+      }
+
+      if (lastDownloadUrl) URL.revokeObjectURL(lastDownloadUrl);
+      const blob = new Blob([b64], {type:'text/plain'});
+      lastDownloadUrl = URL.createObjectURL(blob);
+      btnDownload.disabled = false;
+      panelEncrypt.setAttribute('data-state','done');
+    } catch (err) {
+      log('Encryption failed: ' + err.message, 'err');
+    } finally {
+      btnEncrypt.disabled = false;
+    }
+  });
+
+  btnDownload.addEventListener('click', () => {
+    if (!lastDownloadUrl) return;
+    const a = document.createElement('a');
+    a.href = lastDownloadUrl;
+    a.download = 'save.dat';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    log('Downloaded save.dat — back up your original before replacing it.');
+  });
+
+  refreshDecryptEnabled();
+})();
+</script>
+</body>
+</html>
